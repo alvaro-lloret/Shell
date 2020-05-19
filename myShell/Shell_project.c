@@ -18,11 +18,16 @@ To compile and run the program:
 #include <string.h>
 #define MAX_LINE 256 /* 256 chars per line, per command, should be enough. */
 
+// My handler to work with signals
+void signal_handler(int signal){			//
+	//printf("I'M INSIDE THE SIGNAL_HANDLER\n");
+	//Here I should delete a job(because here I would receive the SIGCHLD) 
+
+}
+
 // -----------------------------------------------------------------------
 //                            MAIN          
 // -----------------------------------------------------------------------
-
-
 
 
 int main(void)
@@ -38,19 +43,15 @@ int main(void)
 
 	job* jobs_list; 				//
 	
-	// My handler to work with signals
-	void signal_handler(int signal){		//
-		
-	}
-
-	
 	jobs_list = new_list("My list of tasks"); 	//
 	
 	signal(SIGCHLD,signal_handler); 		//
+
 	/* Signal that will be used when a user wants to suspend
 	*  the background task by pressing Ctrl+Z on the keyboard
 	*/
 	signal(SIGTSTP,signal_handler);			//
+
 	/* The shell should ignore these signals:
 	*  SIGINT, SIGQUIT, SIGTSTP, SIGTTIN, SIGTTOUT
 	*  but the commnad created with fork() should
@@ -60,7 +61,8 @@ int main(void)
 
 
 	while (1)   /* Program terminates normally inside get_command() after ^D is typed*/
-	{   		
+	{   				
+				
 		printf("COMMAND->");
 		fflush(stdout);
 		get_command(inputBuffer, MAX_LINE, args, &background);  /* get next command */
@@ -85,37 +87,41 @@ int main(void)
         		fprintf(stderr, "parent: error in fork\n");
         		exit(1);
     		}
-
-    		if (pid_fork == 0)
+    		else if (pid_fork == 0)
     		{
-       		
-        	// <POST-FORK CHILD ONLY CODE HERE>
+       			// <POST-FORK CHILD ONLY CODE HERE>
 		
-		//I restore default behaviour
-        	restore_terminal_signals(); 
+			//I restore default behaviour
+        		restore_terminal_signals(); 
 
-       		//SEE HERE BRO TASK 1  a)
-        	executable_args[0] = "cat"; // A custom name for the process
-        	executable_args[1] = "mypipecat";
-        	executable_args[2] = NULL; // Last argument
-
-        	fprintf(stderr, "child : %d %s\n", getpid(), executable_file);
+			//(2) THE CHILD PROCESS WILL INVOKE execvp()
+        		execvp(args[0],args);
 		
-		//(2) THE CHILD PROCESS WILL INVOKE execvp()
-        	execvp(executable_args[0], executable_args);
-		
-        	fprintf(stderr, "child: error in exec\n");
-        	exit(EXIT_FAILURE);
+        		printf("Error, command not found: %s\n",args[0]);
+        		exit(EXIT_FAILURE);
 	    	}
-   		else
-   		{
-        	// <POST-FORK PARENT ONLY CODE HERE>
-       
-  		}
-
+   	
+	
     		/* Only parent process should reach here */
-   		
 
-		
+   		//I have to mask and unmask, otherwise signals may arrive before the job that we create in the parent is completely initialized
+		//I also need to use block_signal
+
+		//(3) IF background == 0, THE PARENT WILL WAIT, OTHERWISE CONTINUE 
+		if(background==0){
+			
+			int waitpid_value = waitpid(pid_fork,&status,WUNTRACED);
+			status_res = analyze_status(status,&info);
+
+			//(4) SHELL SHOWS A STATUS MESSAGE FOR PROCESSED COMMAND 
+			printf("Foreground pid: %d, command: %s , %s, info: %d \n",pid_fork,args[0],status_strings[status_res],info);
+
+		}else{
+			//I think i dont need to do anything when it's a background process, it only continues
+		 	printf("Background jod running... pid: %d, command: %s \n",pid_fork,args[0],status_strings[status_res]);
+		}
+       
+		//(5) LOOP RETURNS TO get_commnad() FUNCTION
+					
 	} // end while
 }
