@@ -77,7 +77,27 @@ int main(void)
 			 (5) loop returns to get_commnad() function
 		*/
 		
-		//--------------------------------------- MY OWN CODE BELOW --------------------------------------------
+		//--------------------------------------- MY OWN CODE BELOW --------------------------------------------//
+
+
+		//Internal commands
+		if(strcmp(args[0],"cd")==0){
+			if(args[1]==NULL){
+				printf("You have to specify an argument for cd. Example: cd /home\n");			
+			}else{
+				if(chdir(args[1])==0){
+					printf("Change directory to %s has been succesful\n",args[1]);	
+				}else{
+					printf("Change directory to %s hasn't been possible\n",args[1]);
+				}
+			}
+			
+			continue;
+		}
+
+
+
+
 		// (1)FORK A CHILD PROCESS USING fork()
    		pid_fork = fork();
 
@@ -91,6 +111,20 @@ int main(void)
     		{
        			// <POST-FORK CHILD ONLY CODE HERE>
 		
+			/**To execute an extenal commnand in the Shell, the command 
+			   should belong to an independent process group so that the 
+ 			   the terminal can be assigned to one unique foreground task 
+			   at a time. Therefore, the child processes of the shell are
+			   assigned a group id that differs from the parent id so I
+			   need to use new_process_group()
+			**/
+			new_process_group(getpid());
+		
+			if(background==0){
+				set_terminal(getpid());
+			}
+			
+			
 			//I restore default behaviour
         		restore_terminal_signals(); 
 
@@ -100,17 +134,20 @@ int main(void)
         		printf("Error, command not found: %s\n",args[0]);
         		exit(EXIT_FAILURE);
 	    	}
-   	
-	
+
+		
     		/* Only parent process should reach here */
+
+		new_process_group(pid_fork);
 
    		//I have to mask and unmask, otherwise signals may arrive before the job that we create in the parent is completely initialized
 		//I also need to use block_signal
 
 		//(3) IF background == 0, THE PARENT WILL WAIT, OTHERWISE CONTINUE 
 		if(background==0){
-			
+			set_terminal(pid_fork);			
 			int waitpid_value = waitpid(pid_fork,&status,WUNTRACED);
+			set_terminal(getpid());
 			status_res = analyze_status(status,&info);
 
 			//(4) SHELL SHOWS A STATUS MESSAGE FOR PROCESSED COMMAND 
