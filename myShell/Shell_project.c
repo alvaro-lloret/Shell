@@ -18,12 +18,6 @@ To compile and run the program:
 #include <string.h>
 #define MAX_LINE 256 /* 256 chars per line, per command, should be enough. */
 
-// My handler to work with signals
-void signal_handler(int signal){			//
-	//printf("I'M INSIDE THE SIGNAL_HANDLER\n");
-	//Here I should delete a job(because here I would receive the SIGCHLD) 
-
-}
 
 // -----------------------------------------------------------------------
 //                            MAIN          
@@ -42,8 +36,46 @@ int main(void)
 	int info;				/* info processed by analyze_status() */
 
 	job* jobs_list; 				//
+
+
+	// My handler to work with signals
+	void signal_handler(int signal){			
+		int position; 		//Current position in the jobs_list
+		job *currentJob;	//Current job in the jobs_list
+		int pidHandler;		//pid I will use to wait for currentJob
+
+		//Here I should delete a job(because here I would receive the SIGCHLD)
+		for(position=1;position<=list_size(jobs_list);position++){
+			
+			currentJob=get_item_bypos(jobs_list,position);
+			
+			//currentJob is stopped or background 
+			if(currentJob->state != FOREGROUND){
+				pidHandler = waitpid(currentJob->pgid,&status,WNOHANG|WUNTRACED);
+				
+				if(pidHandler == currentJob->pgid){
+					//pidHandler has the same Process Group Id than currentJob so we analyze it
+					status_res=analyze_status(status,&info);
+					if(status_res==SUSPENDED){
+						printf("Process %s\n",status_strings[0]); //O represents "Suspended"
+						currentJob->state=STOPPED;
+						printf("State of the currentJob is %s \n",state_strings[currentJob->state]);
+					}else{
+						printf("Process was finished by a termination signal\n");
+						delete_job(jobs_list,currentJob);
+						position--;
+					}
+
+				}//end if pidHandler was different of the Process Group Id
+
+			}//end if currenJob was in foreground
+
+		} //end for-loop of jobs_list
+		 
+	}//end of signal_handler
+
 	
-	jobs_list = new_list("My list of tasks"); 	//
+	jobs_list = new_list("my list of tasks"); 	//
 	
 	signal(SIGCHLD,signal_handler); 		//
 
@@ -95,7 +127,15 @@ int main(void)
 			continue;
 		}
 
-
+		if(strcmp(args[0],"jobs")==0){
+			if(empty_list(jobs_list)){
+				printf("There are no jobs on the list\n");			
+			}else{
+				print_job_list(jobs_list);
+			}
+			
+			continue;
+		}
 
 
 		// (1)FORK A CHILD PROCESS USING fork()
@@ -140,11 +180,14 @@ int main(void)
 
 		new_process_group(pid_fork);
 
-   		//I have to mask and unmask, otherwise signals may arrive before the job that we create in the parent is completely initialized
-		//I also need to use block_signal
+   		//I use block_SIGCHLD() and unblock_SIGCHLD() every time my code modify jobs_list 
+		// in order to avoid consistency problems between the parent and the child when
+		// when they try to modify jobs_list
 
 		//(3) IF background == 0, THE PARENT WILL WAIT, OTHERWISE CONTINUE 
 		if(background==0){
+			//Here we have the foreground processes
+
 			set_terminal(pid_fork);			
 			int waitpid_value = waitpid(pid_fork,&status,WUNTRACED);
 			set_terminal(getpid());
@@ -152,10 +195,22 @@ int main(void)
 
 			//(4) SHELL SHOWS A STATUS MESSAGE FOR PROCESSED COMMAND 
 			printf("Foreground pid: %d, command: %s , %s, info: %d \n",pid_fork,args[0],status_strings[status_res],info);
-
+			
+			if(status_res==SUSPENDED){
+				block_SIGCHLD();
+				add_job(jobs_list, new_job(pid_fork, args[0], STOPPED));
+				unblock_SIGCHLD();
+			}	
+			  
 		}else{
-			//I think i dont need to do anything when it's a background process, it only continues
+			//Here we have the background processes
+
+			block_SIGCHLD();
+			add_job(jobs_list, new_job(pid_fork, args[0],BACKGROUND));
+			unblock_SIGCHLD();
+			
 		 	printf("Background jod running... pid: %d, command: %s \n",pid_fork,args[0],status_strings[status_res]);
+			fflush(NULL);
 		}
        
 		//(5) LOOP RETURNS TO get_commnad() FUNCTION
