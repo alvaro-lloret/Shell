@@ -35,9 +35,12 @@ int main(void)
 	enum status status_res; /* status processed by analyze_status() */
 	int info;				/* info processed by analyze_status() */
 
+	
 	job* jobs_list; 				//
-
-
+	job* fgJob;
+	job* bgJob;
+	enum status status_res_in_fg;
+	
 	// My handler to work with signals
 	void signal_handler(int signal){			
 		int position; 		//Current position in the jobs_list
@@ -94,8 +97,9 @@ int main(void)
 
 	while (1)   /* Program terminates normally inside get_command() after ^D is typed*/
 	{   				
-				
-		printf("COMMAND->");
+		printf("\n");		
+		system("pwd");	
+		printf("#Current dir above# COMMAND->");
 		fflush(stdout);
 		get_command(inputBuffer, MAX_LINE, args, &background);  /* get next command */
 		
@@ -109,10 +113,11 @@ int main(void)
 			 (5) loop returns to get_commnad() function
 		*/
 		
-		//--------------------------------------- MY OWN CODE BELOW --------------------------------------------//
+		//--------------------------------------- CODE BELOW --------------------------------------------//
 
 
-		//Internal commands
+		//Internal commands//
+		//----------cd----------//
 		if(strcmp(args[0],"cd")==0){
 			if(args[1]==NULL){
 				printf("You have to specify an argument for cd. Example: cd /home\n");			
@@ -126,7 +131,8 @@ int main(void)
 			
 			continue;
 		}
-
+		
+		//----------jobs----------//
 		if(strcmp(args[0],"jobs")==0){
 			if(empty_list(jobs_list)){
 				printf("There are no jobs on the list\n");			
@@ -137,6 +143,75 @@ int main(void)
 			continue;
 		}
 
+		//----------fg----------//
+		if(strcmp(args[0],"fg")==0){
+			if(empty_list(jobs_list)){
+				printf("There are no jobs on the list\n");			
+			}else{
+				if(args[1]==NULL){
+					fgJob = get_item_bypos(jobs_list,1);	
+				}else{
+					fgJob = get_item_bypos(jobs_list,atoi(args[1]));
+				}
+
+				if(fgJob!=NULL){
+					set_terminal(fgJob->pgid);
+					fgJob->state=FOREGROUND;
+					killpg(fgJob->pgid, SIGCONT);
+					pid_wait=waitpid(pid_fork,&status,WUNTRACED);
+					
+					//We have to do the same than in the father
+					set_terminal(getpid());
+					status_res_in_fg = analyze_status(status,&info);
+				
+				printf("Foreground pid: %d, command: %s , %s, info: %d \n",pid_wait,fgJob->command,status_strings[status_res_in_fg],info);
+					if(status_res_in_fg==SUSPENDED){
+						printf("Process %s\n",status_strings[0]); //O represents "Suspended"
+						fgJob->state=STOPPED;
+						printf("State of the fgJob is %s \n",state_strings[fgJob->state]);
+					}else{
+						block_SIGCHLD();
+						delete_job(jobs_list,fgJob);
+						unblock_SIGCHLD();
+					}
+					
+					
+				}else {
+					printf("No proccess has been found in that position\n");
+				}
+		
+
+			}
+			
+			continue;
+		}
+
+		//----------bg----------//
+		if(strcmp(args[0],"bg")==0){
+			if(empty_list(jobs_list)){
+				printf("There are no jobs on the list\n");
+			}else{
+				if(args[1]==NULL){
+					bgJob = get_item_bypos(jobs_list,1);	
+				}else{
+					bgJob = get_item_bypos(jobs_list,atoi(args[1]));
+				}
+
+				if(bgJob!=NULL){
+					if(bgJob->state==STOPPED){
+						bgJob->state=BACKGROUND;
+					}
+					killpg(bgJob->pgid,SIGCONT);
+					printf("Background jod running... pid: %d, command: %s \n",bgJob->pgid,bgJob->command);
+				      	
+				}else{
+					printf("No proccess has been found in that position\n");
+				}
+				
+			}
+			
+			continue;
+		}
 
 		// (1)FORK A CHILD PROCESS USING fork()
    		pid_fork = fork();
@@ -163,7 +238,6 @@ int main(void)
 			if(background==0){
 				set_terminal(getpid());
 			}
-			
 			
 			//I restore default behaviour
         		restore_terminal_signals(); 
@@ -209,7 +283,7 @@ int main(void)
 			add_job(jobs_list, new_job(pid_fork, args[0],BACKGROUND));
 			unblock_SIGCHLD();
 			
-		 	printf("Background jod running... pid: %d, command: %s \n",pid_fork,args[0],status_strings[status_res]);
+		 	printf("Background jod running... pid: %d, command: %s \n",pid_fork,args[0]);
 			fflush(NULL);
 		}
        
